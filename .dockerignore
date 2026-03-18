@@ -1,0 +1,11 @@
+.git
+.gitignore
+.golangci.yml
+.DS_Store
+coverage.out
+bin
+dist
+README.md
+docs
+tests
+**/*_test.go
