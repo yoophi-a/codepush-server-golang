@@ -14,6 +14,7 @@ The migration explicitly excludes endpoints that carry release metadata payloads
 
 - `POST /apps/{appName}/deployments/{deploymentName}/release`
 - `PATCH /apps/{appName}/deployments/{deploymentName}/release`
+- `POST /apps/{appName}/deployments/{sourceDeploymentName}/promote/{destDeploymentName}`
 
 ## Layering
 

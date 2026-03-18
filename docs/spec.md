@@ -10,6 +10,7 @@ Rules:
 - use JSON for API responses except the welcome and HTML auth pages
 - require bearer auth on management endpoints
 - omit release upload/update endpoints because they depend on metadata-bearing payloads that are out of scope
+- omit promote endpoints for the same reason because they accept `PackageInfo` metadata overrides
 
 ## Functional Requirements
 
