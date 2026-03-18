@@ -1,0 +1,770 @@
+openapi: 3.0.3
+info:
+  title: CodePush Server API
+  version: 1.0.0
+  description: >
+    Go migration target derived from the reference code-push-server project.
+    Endpoints with release metadata payloads are intentionally excluded.
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: Health
+  - name: Authentication
+  - name: Account Management
+  - name: Access Keys
+  - name: Apps
+  - name: Collaborators
+  - name: Deployments
+  - name: Metrics
+  - name: Acquisition
+paths:
+  /:
+    get:
+      tags: [Health]
+      summary: Welcome message
+      responses:
+        '200':
+          description: Welcome message
+          content:
+            text/plain:
+              schema:
+                type: string
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /authenticated:
+    get:
+      tags: [Authentication]
+      summary: Validate bearer auth
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+  /auth/login:
+    get:
+      tags: [Authentication]
+      summary: Login page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+  /auth/register:
+    get:
+      tags: [Authentication]
+      summary: Registration page
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+  /auth/login/github:
+    get:
+      tags: [Authentication]
+      summary: GitHub OAuth start
+      responses:
+        '501':
+          description: Not implemented
+  /auth/login/microsoft:
+    get:
+      tags: [Authentication]
+      summary: Microsoft OAuth start
+      responses:
+        '501':
+          description: Not implemented
+  /auth/login/azure-ad:
+    get:
+      tags: [Authentication]
+      summary: Azure AD OAuth start
+      responses:
+        '501':
+          description: Not implemented
+  /auth/callback/github:
+    get:
+      tags: [Authentication]
+      summary: GitHub OAuth callback
+      responses:
+        '501':
+          description: Not implemented
+  /account:
+    get:
+      tags: [Account Management]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+  /accessKeys:
+    get:
+      tags: [Access Keys]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Access keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessKeys:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessKey'
+    post:
+      tags: [Access Keys]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessKeyRequest'
+      responses:
+        '201':
+          description: Access key created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessKey:
+                    $ref: '#/components/schemas/AccessKey'
+  /accessKeys/{accessKeyName}:
+    parameters:
+      - $ref: '#/components/parameters/AccessKeyName'
+    get:
+      tags: [Access Keys]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Access key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessKey:
+                    $ref: '#/components/schemas/AccessKey'
+    patch:
+      tags: [Access Keys]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessKeyRequest'
+      responses:
+        '200':
+          description: Updated access key
+    delete:
+      tags: [Access Keys]
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Deleted
+  /sessions/{createdBy}:
+    delete:
+      tags: [Access Keys]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: createdBy
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+  /apps:
+    get:
+      tags: [Apps]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Apps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/App'
+    post:
+      tags: [Apps]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppCreationRequest'
+      responses:
+        '201':
+          description: App created
+  /apps/{appName}:
+    parameters:
+      - $ref: '#/components/parameters/AppName'
+    get:
+      tags: [Apps]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: App
+    patch:
+      tags: [Apps]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppPatchRequest'
+      responses:
+        '200':
+          description: Updated app
+    delete:
+      tags: [Apps]
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Deleted
+  /apps/{appName}/transfer/{email}:
+    post:
+      tags: [Apps]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - $ref: '#/components/parameters/Email'
+      responses:
+        '201':
+          description: Ownership transferred
+  /apps/{appName}/collaborators:
+    get:
+      tags: [Collaborators]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: Collaborators
+  /apps/{appName}/collaborators/{email}:
+    post:
+      tags: [Collaborators]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - $ref: '#/components/parameters/Email'
+      responses:
+        '201':
+          description: Collaborator added
+    delete:
+      tags: [Collaborators]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - $ref: '#/components/parameters/Email'
+      responses:
+        '204':
+          description: Collaborator removed
+  /apps/{appName}/deployments:
+    get:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: Deployments
+    post:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentRequest'
+      responses:
+        '201':
+          description: Deployment created
+  /apps/{appName}/deployments/{deploymentName}:
+    parameters:
+      - $ref: '#/components/parameters/AppName'
+      - $ref: '#/components/parameters/DeploymentName'
+    get:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deployment
+    patch:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentPatchRequest'
+      responses:
+        '200':
+          description: Deployment updated
+    delete:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Deployment deleted
+  /apps/{appName}/deployments/{deploymentName}/history:
+    parameters:
+      - $ref: '#/components/parameters/AppName'
+      - $ref: '#/components/parameters/DeploymentName'
+    get:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: History
+    delete:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: History cleared
+  /apps/{appName}/deployments/{deploymentName}/metrics:
+    get:
+      tags: [Metrics]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - $ref: '#/components/parameters/DeploymentName'
+      responses:
+        '200':
+          description: Metrics
+  /apps/{appName}/deployments/{deploymentName}/rollback:
+    post:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - $ref: '#/components/parameters/DeploymentName'
+      responses:
+        '201':
+          description: Rolled back
+  /apps/{appName}/deployments/{deploymentName}/rollback/{targetRelease}:
+    post:
+      tags: [Deployments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - $ref: '#/components/parameters/DeploymentName'
+        - name: targetRelease
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Rolled back to explicit release
+  /updateCheck:
+    get:
+      tags: [Acquisition]
+      parameters:
+        - $ref: '#/components/parameters/DeploymentKeyQuery'
+        - $ref: '#/components/parameters/AppVersionQuery'
+        - name: packageHash
+          in: query
+          schema:
+            type: string
+        - name: isCompanion
+          in: query
+          schema:
+            type: boolean
+        - name: label
+          in: query
+          schema:
+            type: string
+        - name: clientUniqueId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Update info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateCheckEnvelope'
+  /v0.1/public/codepush/update_check:
+    get:
+      tags: [Acquisition]
+      parameters:
+        - $ref: '#/components/parameters/DeploymentKeyQuery'
+        - $ref: '#/components/parameters/AppVersionQuery'
+      responses:
+        '200':
+          description: Update info
+  /reportStatus/deploy:
+    post:
+      tags: [Acquisition]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentStatusReport'
+      responses:
+        '200':
+          description: Report accepted
+  /v0.1/public/codepush/report_status/deploy:
+    post:
+      tags: [Acquisition]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentStatusReport'
+      responses:
+        '200':
+          description: Report accepted
+  /reportStatus/download:
+    post:
+      tags: [Acquisition]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadReport'
+      responses:
+        '200':
+          description: Report accepted
+  /v0.1/public/codepush/report_status/download:
+    post:
+      tags: [Acquisition]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadReport'
+      responses:
+        '200':
+          description: Report accepted
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    AccessKeyName:
+      name: accessKeyName
+      in: path
+      required: true
+      schema:
+        type: string
+    AppName:
+      name: appName
+      in: path
+      required: true
+      schema:
+        type: string
+    DeploymentName:
+      name: deploymentName
+      in: path
+      required: true
+      schema:
+        type: string
+    Email:
+      name: email
+      in: path
+      required: true
+      schema:
+        type: string
+        format: email
+    DeploymentKeyQuery:
+      name: deploymentKey
+      in: query
+      required: true
+      schema:
+        type: string
+    AppVersionQuery:
+      name: appVersion
+      in: query
+      required: true
+      schema:
+        type: string
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+    Account:
+      type: object
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+        linkedProviders:
+          type: array
+          items:
+            type: string
+      required: [email, name, linkedProviders]
+    AccessKey:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+        description:
+          type: string
+        name:
+          type: string
+        createdBy:
+          type: string
+        createdTime:
+          type: integer
+          format: int64
+        expires:
+          type: integer
+          format: int64
+        isSession:
+          type: boolean
+    AccessKeyRequest:
+      type: object
+      properties:
+        friendlyName:
+          type: string
+        description:
+          type: string
+        name:
+          type: string
+        createdBy:
+          type: string
+        ttl:
+          type: integer
+          format: int64
+    CollaboratorProperties:
+      type: object
+      properties:
+        isCurrentAccount:
+          type: boolean
+        permission:
+          type: string
+      required: [permission]
+    App:
+      type: object
+      properties:
+        name:
+          type: string
+        deployments:
+          type: array
+          items:
+            type: string
+        collaborators:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CollaboratorProperties'
+      required: [name]
+    AppCreationRequest:
+      allOf:
+        - $ref: '#/components/schemas/App'
+        - type: object
+          properties:
+            manuallyProvisionDeployments:
+              type: boolean
+    AppPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+    DeploymentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        key:
+          type: string
+      required: [name]
+    DeploymentPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+    Package:
+      type: object
+      properties:
+        label:
+          type: string
+        appVersion:
+          type: string
+        packageHash:
+          type: string
+        description:
+          type: string
+        isDisabled:
+          type: boolean
+        isMandatory:
+          type: boolean
+        blobUrl:
+          type: string
+        size:
+          type: integer
+          format: int64
+        uploadTime:
+          type: integer
+          format: int64
+        releaseMethod:
+          type: string
+        originalLabel:
+          type: string
+        originalDeployment:
+          type: string
+    Deployment:
+      type: object
+      properties:
+        name:
+          type: string
+        key:
+          type: string
+        package:
+          $ref: '#/components/schemas/Package'
+      required: [name, key]
+    DeploymentMetrics:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/UpdateMetrics'
+    UpdateMetrics:
+      type: object
+      properties:
+        active:
+          type: integer
+        downloaded:
+          type: integer
+        failed:
+          type: integer
+        installed:
+          type: integer
+      required: [active]
+    UpdateCheckResponse:
+      type: object
+      properties:
+        target_binary_range:
+          type: string
+        downloadURL:
+          type: string
+        isAvailable:
+          type: boolean
+        packageSize:
+          type: integer
+        shouldRunBinaryVersion:
+          type: boolean
+        updateAppVersion:
+          type: boolean
+        appVersion:
+          type: string
+        description:
+          type: string
+        isDisabled:
+          type: boolean
+        isMandatory:
+          type: boolean
+        label:
+          type: string
+        packageHash:
+          type: string
+      required: [isAvailable]
+    UpdateCheckEnvelope:
+      type: object
+      properties:
+        updateInfo:
+          $ref: '#/components/schemas/UpdateCheckResponse'
+      required: [updateInfo]
+    DeploymentStatusReport:
+      type: object
+      properties:
+        appVersion:
+          type: string
+        clientUniqueId:
+          type: string
+        deploymentKey:
+          type: string
+        previousDeploymentKey:
+          type: string
+        previousLabelOrAppVersion:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+      required: [appVersion, deploymentKey]
+    DownloadReport:
+      type: object
+      properties:
+        clientUniqueId:
+          type: string
+        deploymentKey:
+          type: string
+        label:
+          type: string
+      required: [deploymentKey, label]
