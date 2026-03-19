@@ -4,13 +4,20 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+type client interface {
+	BucketExists(context.Context, string) (bool, error)
+	PutObject(context.Context, string, string, io.Reader, int64, minio.PutObjectOptions) (minio.UploadInfo, error)
+	RemoveObject(context.Context, string, string, minio.RemoveObjectOptions) error
+}
+
 type Storage struct {
-	client *minio.Client
+	client client
 	bucket string
 }
 

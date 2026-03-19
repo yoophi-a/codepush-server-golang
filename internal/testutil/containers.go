@@ -1,5 +1,3 @@
-//go:build integration || e2e
-
 package testutil
 
 import (
@@ -25,6 +23,8 @@ type Endpoints struct {
 	MinIOAddr   string
 }
 
+var startStackFn = startStack
+
 func StartStack(ctx context.Context) (stack *Stack, endpoints Endpoints, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -33,7 +33,7 @@ func StartStack(ctx context.Context) (stack *Stack, endpoints Endpoints, err err
 			err = fmt.Errorf("testcontainers unavailable: %v", recovered)
 		}
 	}()
-	return startStack(ctx)
+	return startStackFn(ctx)
 }
 
 func startStack(ctx context.Context) (*Stack, Endpoints, error) {

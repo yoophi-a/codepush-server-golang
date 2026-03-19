@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/yoophi/codepush-server-golang/internal/core/domain"
@@ -18,7 +19,17 @@ import (
 var schemaSQL string
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool    db
+	rawPool *pgxpool.Pool
+}
+
+type db interface {
+	Begin(context.Context) (pgx.Tx, error)
+	Close()
+	Ping(context.Context) error
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
 func NewStore(ctx context.Context, databaseURL string) (*Store, error) {
@@ -26,7 +37,7 @@ func NewStore(ctx context.Context, databaseURL string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{pool: pool}
+	store := &Store{pool: pool, rawPool: pool}
 	if err := store.Migrate(ctx); err != nil {
 		pool.Close()
 		return nil, err
@@ -39,7 +50,7 @@ func (s *Store) Close() {
 }
 
 func (s *Store) Pool() *pgxpool.Pool {
-	return s.pool
+	return s.rawPool
 }
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -237,26 +248,38 @@ func (r *AppRepo) List(ctx context.Context, accountID string) ([]domain.App, err
 	}
 	defer rows.Close()
 	var result []domain.App
+	var appIDs []string
 	for rows.Next() {
 		var app domain.App
 		if err := rows.Scan(&app.ID, &app.Name, &app.CreatedAt); err != nil {
 			return nil, err
 		}
-		deps, err := (&DeploymentRepo{store: r.store}).List(ctx, accountID, app.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, dep := range deps {
-			app.Deployments = append(app.Deployments, dep.Name)
-		}
-		collabs, err := r.ListCollaborators(ctx, accountID, app.ID)
-		if err != nil {
-			return nil, err
-		}
-		app.Collaborators = collabs
 		result = append(result, app)
+		appIDs = append(appIDs, app.ID)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(result) == 0 {
+		return result, nil
+	}
+
+	deploymentsByApp, err := r.listDeploymentNamesByApp(ctx, appIDs)
+	if err != nil {
+		return nil, err
+	}
+	collaboratorsByApp, err := r.listCollaboratorsByApps(ctx, accountID, appIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range result {
+		result[i].Deployments = deploymentsByApp[result[i].ID]
+		result[i].Collaborators = collaboratorsByApp[result[i].ID]
+		if result[i].Collaborators == nil {
+			result[i].Collaborators = map[string]domain.CollaboratorProperties{}
+		}
+	}
+	return result, nil
 }
 
 func (r *AppRepo) Create(ctx context.Context, accountID string, app domain.App) (domain.App, error) {
@@ -448,6 +471,63 @@ func (r *AppRepo) ListCollaborators(ctx context.Context, accountID, appID string
 			return nil, err
 		}
 		result[email] = domain.CollaboratorProperties{
+			IsCurrentAccount: current,
+			Permission:       domain.Permission(permission),
+		}
+	}
+	return result, rows.Err()
+}
+
+func (r *AppRepo) listDeploymentNamesByApp(ctx context.Context, appIDs []string) (map[string][]string, error) {
+	rows, err := r.store.pool.Query(ctx, `
+		SELECT app_id, name
+		FROM deployments
+		WHERE app_id = ANY($1)
+		ORDER BY app_id, name
+	`, appIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]string, len(appIDs))
+	for rows.Next() {
+		var appID string
+		var name string
+		if err := rows.Scan(&appID, &name); err != nil {
+			return nil, err
+		}
+		result[appID] = append(result[appID], name)
+	}
+	return result, rows.Err()
+}
+
+func (r *AppRepo) listCollaboratorsByApps(ctx context.Context, accountID string, appIDs []string) (map[string]map[string]domain.CollaboratorProperties, error) {
+	rows, err := r.store.pool.Query(ctx, `
+		SELECT ac.app_id, a.email, ac.permission, a.id = $2
+		FROM app_collaborators ac
+		JOIN accounts a ON a.id = ac.account_id
+		WHERE ac.app_id = ANY($1)
+		ORDER BY ac.app_id, a.email
+	`, appIDs, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]map[string]domain.CollaboratorProperties, len(appIDs))
+	for rows.Next() {
+		var appID string
+		var email string
+		var permission string
+		var current bool
+		if err := rows.Scan(&appID, &email, &permission, &current); err != nil {
+			return nil, err
+		}
+		if result[appID] == nil {
+			result[appID] = map[string]domain.CollaboratorProperties{}
+		}
+		result[appID][email] = domain.CollaboratorProperties{
 			IsCurrentAccount: current,
 			Permission:       domain.Permission(permission),
 		}

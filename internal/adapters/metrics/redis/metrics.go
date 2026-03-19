@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"strconv"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -18,12 +19,71 @@ type Metrics struct {
 	client *goredis.Client
 }
 
-func New(addr, password string, db int) *Metrics {
+type ClientOptions struct {
+	PoolSize     int
+	MinIdleConns int
+	MaxRetries   int
+	DialTimeout  time.Duration
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+}
+
+func defaultClientOptions() ClientOptions {
+	return ClientOptions{
+		PoolSize:     20,
+		MinIdleConns: 5,
+		MaxRetries:   3,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+	}
+}
+
+func withDefaultClientOptions(options ClientOptions) ClientOptions {
+	defaults := defaultClientOptions()
+	if options.PoolSize <= 0 {
+		options.PoolSize = defaults.PoolSize
+	}
+	if options.MinIdleConns < 0 {
+		options.MinIdleConns = defaults.MinIdleConns
+	}
+	if options.MinIdleConns == 0 {
+		options.MinIdleConns = defaults.MinIdleConns
+	}
+	if options.MaxRetries < 0 {
+		options.MaxRetries = defaults.MaxRetries
+	}
+	if options.MaxRetries == 0 {
+		options.MaxRetries = defaults.MaxRetries
+	}
+	if options.DialTimeout <= 0 {
+		options.DialTimeout = defaults.DialTimeout
+	}
+	if options.ReadTimeout <= 0 {
+		options.ReadTimeout = defaults.ReadTimeout
+	}
+	if options.WriteTimeout <= 0 {
+		options.WriteTimeout = defaults.WriteTimeout
+	}
+	return options
+}
+
+func New(addr, password string, db int, clientOptions ...ClientOptions) *Metrics {
+	options := defaultClientOptions()
+	if len(clientOptions) > 0 {
+		options = withDefaultClientOptions(clientOptions[0])
+	}
 	return &Metrics{
 		client: goredis.NewClient(&goredis.Options{
-			Addr:     addr,
-			Password: password,
-			DB:       db,
+			Addr:         addr,
+			Password:     password,
+			DB:           db,
+			PoolSize:     options.PoolSize,
+			MinIdleConns: options.MinIdleConns,
+			MaxRetries:   options.MaxRetries,
+			DialTimeout:  options.DialTimeout,
+			ReadTimeout:  options.ReadTimeout,
+			WriteTimeout: options.WriteTimeout,
 		}),
 	}
 }

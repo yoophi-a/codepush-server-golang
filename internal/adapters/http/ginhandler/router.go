@@ -5,12 +5,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yoophi/codepush-server-golang/internal/adapters/http/httperrors"
 	"github.com/yoophi/codepush-server-golang/internal/adapters/http/middleware"
-	"github.com/yoophi/codepush-server-golang/internal/application"
 	"github.com/yoophi/codepush-server-golang/internal/core/domain"
+	"github.com/yoophi/codepush-server-golang/internal/core/ports"
 )
 
-func NewRouter(service *application.Service) *gin.Engine {
+func NewRouter(service ports.HTTPAPI) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), gin.Logger())
 
@@ -383,7 +384,7 @@ func NewRouter(service *application.Service) *gin.Engine {
 }
 
 func writeError(c *gin.Context, err error) {
-	c.JSON(application.HTTPStatus(err), gin.H{"error": err.Error()})
+	c.JSON(httperrors.Status(err), gin.H{"error": err.Error()})
 }
 
 func firstNonEmpty(values ...string) string {

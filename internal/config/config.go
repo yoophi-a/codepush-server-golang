@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -14,6 +15,13 @@ type Config struct {
 	RedisAddr            string
 	RedisPassword        string
 	RedisDB              int
+	RedisPoolSize        int
+	RedisMinIdleConns    int
+	RedisMaxRetries      int
+	RedisDialTimeoutSec  int
+	RedisReadTimeoutSec  int
+	RedisWriteTimeoutSec int
+	DefaultAccessKeyTTL  int64
 	StorageBackend       string
 	S3Bucket             string
 	S3Region             string
@@ -39,6 +47,13 @@ func Load() (Config, error) {
 		RedisAddr:            getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:        os.Getenv("REDIS_PASSWORD"),
 		RedisDB:              getEnvInt("REDIS_DB", 0),
+		RedisPoolSize:        getEnvInt("REDIS_POOL_SIZE", 20),
+		RedisMinIdleConns:    getEnvInt("REDIS_MIN_IDLE_CONNS", 5),
+		RedisMaxRetries:      getEnvInt("REDIS_MAX_RETRIES", 3),
+		RedisDialTimeoutSec:  getEnvInt("REDIS_DIAL_TIMEOUT_SEC", 5),
+		RedisReadTimeoutSec:  getEnvInt("REDIS_READ_TIMEOUT_SEC", 3),
+		RedisWriteTimeoutSec: getEnvInt("REDIS_WRITE_TIMEOUT_SEC", 3),
+		DefaultAccessKeyTTL:  getEnvInt64("DEFAULT_ACCESS_KEY_TTL", int64(60*24*time.Hour/time.Millisecond)),
 		StorageBackend:       strings.ToLower(getEnv("STORAGE_BACKEND", "s3")),
 		S3Bucket:             os.Getenv("S3_BUCKET"),
 		S3Region:             getEnv("S3_REGION", "us-east-1"),
@@ -73,6 +88,15 @@ func getEnv(key, fallback string) string {
 func getEnvInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func getEnvInt64(key string, fallback int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return parsed
 		}
 	}

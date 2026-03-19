@@ -6,13 +6,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yoophi/codepush-server-golang/internal/application"
+	"github.com/yoophi/codepush-server-golang/internal/adapters/http/httperrors"
 	"github.com/yoophi/codepush-server-golang/internal/core/domain"
+	"github.com/yoophi/codepush-server-golang/internal/core/ports"
 )
 
 const accountContextKey = "account"
 
-func RequireAuth(service *application.Service) gin.HandlerFunc {
+func RequireAuth(service ports.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if !strings.HasPrefix(strings.ToLower(header), "bearer ") {
@@ -22,7 +23,7 @@ func RequireAuth(service *application.Service) gin.HandlerFunc {
 		token := strings.TrimSpace(header[7:])
 		account, err := service.Authenticate(c.Request.Context(), token)
 		if err != nil {
-			c.AbortWithStatusJSON(application.HTTPStatus(err), gin.H{"error": err.Error()})
+			c.AbortWithStatusJSON(httperrors.Status(err), gin.H{"error": err.Error()})
 			return
 		}
 		c.Set(accountContextKey, account)

@@ -62,6 +62,9 @@ type MetricsRepository interface {
 	Clear(context.Context, string) error
 }
 
+// BlobStorage is an outbound port reserved for artifact upload/delete flows.
+// In the current implementation it is composed in cmd/server for health/wiring
+// and is expected to be used by future release-oriented application use cases.
 type BlobStorage interface {
 	HealthChecker
 	PutObject(context.Context, string, []byte, string) (string, error)

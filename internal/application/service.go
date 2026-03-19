@@ -2,10 +2,12 @@ package application
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -17,14 +19,29 @@ import (
 )
 
 const defaultAccessKeyTTL = int64(60 * 24 * time.Hour / time.Millisecond)
+const maxGeneratedDeploymentKeyAttempts = 3
+
+var _ ports.HTTPAPI = (*Service)(nil)
+var tokenGenerator = generateToken
+
+type Option func(*Service)
 
 type Service struct {
-	accounts    ports.AccountRepository
-	accessKeys  ports.AccessKeyRepository
-	apps        ports.AppRepository
-	deployments ports.DeploymentRepository
-	packages    ports.PackageRepository
-	metrics     ports.MetricsRepository
+	accounts            ports.AccountRepository
+	accessKeys          ports.AccessKeyRepository
+	apps                ports.AppRepository
+	deployments         ports.DeploymentRepository
+	packages            ports.PackageRepository
+	metrics             ports.MetricsRepository
+	defaultAccessKeyTTL int64
+}
+
+func WithDefaultAccessKeyTTL(ttl int64) Option {
+	return func(s *Service) {
+		if ttl > 0 {
+			s.defaultAccessKeyTTL = ttl
+		}
+	}
 }
 
 func NewService(
@@ -34,15 +51,21 @@ func NewService(
 	deployments ports.DeploymentRepository,
 	packages ports.PackageRepository,
 	metrics ports.MetricsRepository,
+	options ...Option,
 ) *Service {
-	return &Service{
-		accounts:    accounts,
-		accessKeys:  accessKeys,
-		apps:        apps,
-		deployments: deployments,
-		packages:    packages,
-		metrics:     metrics,
+	service := &Service{
+		accounts:            accounts,
+		accessKeys:          accessKeys,
+		apps:                apps,
+		deployments:         deployments,
+		packages:            packages,
+		metrics:             metrics,
+		defaultAccessKeyTTL: defaultAccessKeyTTL,
 	}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
 func (s *Service) Health(ctx context.Context) error {
@@ -80,10 +103,10 @@ func (s *Service) CreateAccessKey(ctx context.Context, accountID, createdBy stri
 	now := time.Now().UnixMilli()
 	ttl := req.TTL
 	if ttl == 0 {
-		ttl = defaultAccessKeyTTL
+		ttl = s.defaultAccessKeyTTL
 	}
 	if req.Name == "" {
-		req.Name = generateToken(accountID, now)
+		req.Name = tokenGenerator(accountID, now)
 	}
 	if req.FriendlyName == "" {
 		req.FriendlyName = req.Name
@@ -165,7 +188,7 @@ func (s *Service) CreateApp(ctx context.Context, accountID string, req domain.Ap
 	}
 	if !req.ManuallyProvisionDeployments {
 		for _, name := range []string{"Production", "Staging"} {
-			if _, err := s.deployments.Create(ctx, accountID, app.ID, domain.Deployment{Name: name, Key: generateToken(accountID, time.Now().UnixNano())}); err != nil {
+			if _, err := s.createDeploymentWithGeneratedKey(ctx, accountID, app.ID, name); err != nil {
 				return domain.App{}, err
 			}
 		}
@@ -248,9 +271,27 @@ func (s *Service) CreateDeployment(ctx context.Context, accountID, appName strin
 	}
 	key := req.Key
 	if key == "" {
-		key = generateToken(accountID, time.Now().UnixNano())
+		return s.createDeploymentWithGeneratedKey(ctx, accountID, app.ID, req.Name)
 	}
 	return s.deployments.Create(ctx, accountID, app.ID, domain.Deployment{Name: req.Name, Key: key})
+}
+
+func (s *Service) createDeploymentWithGeneratedKey(ctx context.Context, accountID, appID, name string) (domain.Deployment, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxGeneratedDeploymentKeyAttempts; attempt++ {
+		deployment, err := s.deployments.Create(ctx, accountID, appID, domain.Deployment{
+			Name: name,
+			Key:  tokenGenerator(accountID, time.Now().UnixNano()),
+		})
+		if !errors.Is(err, domain.ErrConflict) {
+			return deployment, err
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = domain.ErrConflict
+	}
+	return domain.Deployment{}, lastErr
 }
 
 func (s *Service) GetDeployment(ctx context.Context, accountID, appName, deploymentName string) (domain.Deployment, error) {
@@ -409,6 +450,10 @@ func (s *Service) ReportDownload(ctx context.Context, report domain.DownloadRepo
 }
 
 func generateToken(seed string, value int64) string {
+	var buf [20]byte
+	if _, err := rand.Read(buf[:]); err == nil {
+		return hex.EncodeToString(buf[:])
+	}
 	h := sha1.New()
 	_, _ = fmt.Fprintf(h, "%s-%d", seed, value)
 	sum := h.Sum(nil)
@@ -469,23 +514,4 @@ func selectedForRollout(clientID string, rollout int, label string) bool {
 	hash := sha1.Sum([]byte(clientID + ":" + label))
 	value := binary.BigEndian.Uint32(hash[:4]) % 100
 	return int(value)+1 <= rollout
-}
-
-func HTTPStatus(err error) int {
-	switch err {
-	case nil:
-		return http.StatusOK
-	case domain.ErrUnauthorized, domain.ErrExpired:
-		return http.StatusUnauthorized
-	case domain.ErrForbidden:
-		return http.StatusForbidden
-	case domain.ErrNotFound:
-		return http.StatusNotFound
-	case domain.ErrConflict:
-		return http.StatusConflict
-	case domain.ErrMalformedRequest:
-		return http.StatusBadRequest
-	default:
-		return http.StatusInternalServerError
-	}
 }
