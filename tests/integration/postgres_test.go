@@ -250,6 +250,14 @@ func TestPostgresRepositories(t *testing.T) {
 			t.Fatalf("expected monotonic labels, got %q and %q", first.Label, second.Label)
 		}
 
+		deployments, err := store.Deployments().List(ctx, owner.ID, app.ID)
+		if err != nil {
+			t.Fatalf("List() error = %v", err)
+		}
+		if len(deployments) != 1 || deployments[0].Package == nil || deployments[0].Package.Label != "v2" {
+			t.Fatalf("expected current package to be attached to deployment list, got %#v", deployments)
+		}
+
 		history, err := store.Packages().ListHistory(ctx, collaborator.ID, app.ID, deployment.ID)
 		if err != nil {
 			t.Fatalf("ListHistory() error = %v", err)

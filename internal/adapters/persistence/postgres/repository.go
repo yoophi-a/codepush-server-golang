@@ -576,16 +576,30 @@ func (r *DeploymentRepo) List(ctx context.Context, accountID, appID string) ([]d
 	}
 	defer rows.Close()
 	var result []domain.Deployment
+	var depIDs []string
 	for rows.Next() {
 		var dep domain.Deployment
 		if err := rows.Scan(&dep.ID, &dep.AppID, &dep.Name, &dep.Key, &dep.CreatedAt); err != nil {
 			return nil, err
 		}
-		pkg, _ := currentPackage(ctx, r.store.pool, dep.ID)
-		dep.Package = pkg
 		result = append(result, dep)
+		depIDs = append(depIDs, dep.ID)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(result) == 0 {
+		return result, nil
+	}
+
+	packagesByDeployment, err := listCurrentPackagesByDeployment(ctx, r.store.pool, depIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range result {
+		result[i].Package = packagesByDeployment[result[i].ID]
+	}
+	return result, nil
 }
 
 func (r *DeploymentRepo) Create(ctx context.Context, accountID, appID string, dep domain.Deployment) (domain.Deployment, error) {
@@ -789,6 +803,32 @@ func currentPackage(ctx context.Context, q queryRower, depID string) (*domain.Pa
 		return nil, err
 	}
 	return &pkg, nil
+}
+
+func listCurrentPackagesByDeployment(ctx context.Context, q queryer, depIDs []string) (map[string]*domain.Package, error) {
+	rows, err := q.Query(ctx, `
+		SELECT DISTINCT ON (deployment_id)
+			id, deployment_id, ordinal, label, app_version, description, is_disabled, is_mandatory, package_hash,
+			blob_url, manifest_blob_url, rollout, size, upload_time, release_method, original_label, original_deployment, released_by
+		FROM packages
+		WHERE deployment_id = ANY($1)
+		ORDER BY deployment_id, ordinal DESC
+	`, depIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]*domain.Package, len(depIDs))
+	for rows.Next() {
+		pkg, err := scanPackage(rows)
+		if err != nil {
+			return nil, err
+		}
+		pkgCopy := pkg
+		result[pkg.DeploymentID] = &pkgCopy
+	}
+	return result, rows.Err()
 }
 
 func nextPackageOrdinal(ctx context.Context, q queryRower, depID string) (int, error) {

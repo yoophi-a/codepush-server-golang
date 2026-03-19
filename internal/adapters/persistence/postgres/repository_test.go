@@ -346,12 +346,6 @@ func TestAppDeploymentAndPackageHelpers(t *testing.T) {
 				switch {
 				case sql == `SELECT permission FROM app_collaborators WHERE app_id = $1 AND account_id = $2`:
 					return fakeRow{values: []any{string(domain.PermissionOwner)}}
-				case sql == `
-			SELECT id, deployment_id, ordinal, label, app_version, description, is_disabled, is_mandatory, package_hash,
-				blob_url, manifest_blob_url, rollout, size, upload_time, release_method, original_label, original_deployment, released_by
-			FROM packages WHERE deployment_id = $1 ORDER BY ordinal DESC LIMIT 1
-		`:
-					return fakeRow{err: pgx.ErrNoRows}
 				case sql == `SELECT COALESCE(MAX(ordinal), 0) + 1 FROM packages WHERE deployment_id = $1`:
 					return fakeRow{values: []any{2}}
 				default:
@@ -367,6 +361,9 @@ func TestAppDeploymentAndPackageHelpers(t *testing.T) {
 		deps, err := store.Deployments().List(context.Background(), "acc-1", "app-1")
 		if err != nil || len(deps) != 1 || deps[0].Name != "Production" {
 			t.Fatalf("unexpected List() result %#v err=%v", deps, err)
+		}
+		if deps[0].Package == nil || deps[0].Package.Label != "v1" {
+			t.Fatalf("expected batched current package, got %#v", deps[0])
 		}
 		history, err := store.Packages().ListHistory(context.Background(), "acc-1", "app-1", "dep-1")
 		if err != nil || len(history) != 1 || history[0].Label != "v1" {
@@ -596,6 +593,83 @@ func TestDeploymentAndPackageCrudMethods(t *testing.T) {
 	deployment, err = store.Deployments().Update(context.Background(), "acc-1", "app-1", domain.Deployment{ID: "dep-1", Name: "Production-2"})
 	if err != nil || deployment.ID != "dep-1" {
 		t.Fatalf("unexpected Update() result %#v err=%v", deployment, err)
+	}
+}
+
+func TestDeploymentRepoListBatchesCurrentPackageLookup(t *testing.T) {
+	queryCount := 0
+	store := testStore(&fakeDB{
+		queryFn: func(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+			queryCount++
+			switch {
+			case strings.Contains(sql, "FROM deployments WHERE app_id = $1"):
+				return &fakeRows{rows: [][]any{
+					{"dep-1", "app-1", "Production", "dep-key-1", int64(1)},
+					{"dep-2", "app-1", "Staging", "dep-key-2", int64(2)},
+				}}, nil
+			case strings.Contains(sql, "FROM packages") && strings.Contains(sql, "ANY($1)"):
+				return &fakeRows{rows: [][]any{
+					{"pkg-1", "dep-1", 1, "v1", "1.0.0", "desc-1", false, false, "hash-1", "blob-1", "manifest-1", nil, int64(1), int64(10), "Rollback", "v0", "Production", "user"},
+					{"pkg-2", "dep-2", 2, "v2", "1.0.1", "desc-2", false, true, "hash-2", "blob-2", "manifest-2", nil, int64(2), int64(20), "Rollback", "v1", "Staging", "user"},
+				}}, nil
+			default:
+				return &fakeRows{}, nil
+			}
+		},
+		rowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			if strings.Contains(sql, "SELECT permission FROM app_collaborators") {
+				return fakeRow{values: []any{string(domain.PermissionOwner)}}
+			}
+			return fakeRow{err: pgx.ErrNoRows}
+		},
+	})
+
+	deployments, err := store.Deployments().List(context.Background(), "acc-1", "app-1")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(deployments) != 2 {
+		t.Fatalf("expected two deployments, got %#v", deployments)
+	}
+	if deployments[0].Package == nil || deployments[0].Package.Label != "v1" {
+		t.Fatalf("expected first deployment package, got %#v", deployments[0])
+	}
+	if deployments[1].Package == nil || deployments[1].Package.Label != "v2" {
+		t.Fatalf("expected second deployment package, got %#v", deployments[1])
+	}
+	if queryCount != 2 {
+		t.Fatalf("expected batched package lookup, got %d queries", queryCount)
+	}
+}
+
+func TestDeploymentRepoListSkipsPackageBatchWhenEmpty(t *testing.T) {
+	queryCount := 0
+	store := testStore(&fakeDB{
+		queryFn: func(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+			queryCount++
+			if strings.Contains(sql, "FROM deployments WHERE app_id = $1") {
+				return &fakeRows{}, nil
+			}
+			t.Fatalf("unexpected package batch query for empty deployment list: %s", sql)
+			return nil, nil
+		},
+		rowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			if strings.Contains(sql, "SELECT permission FROM app_collaborators") {
+				return fakeRow{values: []any{string(domain.PermissionOwner)}}
+			}
+			return fakeRow{err: pgx.ErrNoRows}
+		},
+	})
+
+	deployments, err := store.Deployments().List(context.Background(), "acc-1", "app-1")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(deployments) != 0 {
+		t.Fatalf("expected no deployments, got %#v", deployments)
+	}
+	if queryCount != 1 {
+		t.Fatalf("expected only deployment list query, got %d", queryCount)
 	}
 }
 
